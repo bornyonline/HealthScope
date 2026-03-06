@@ -1,24 +1,20 @@
-//
-//  ContentView.swift
-//  HealthScope
-//
-//  Created by eduardo villani on 3/4/26.
-//
-
 import SwiftUI
 
 struct ContentView: View {
-    var body: some View {
-        VStack {
-            Image(systemName: "globe")
-                .imageScale(.large)
-                .foregroundStyle(.tint)
-            Text("Hello, world!")
-        }
-        .padding()
-    }
-}
+    @StateObject private var healthViewModel = HealthDashboardViewModel()
 
-#Preview {
-    ContentView()
+    var body: some View {
+        TabView {
+            HealthDashboardView()
+                .tabItem {
+                    Label("Health", systemImage: "heart.text.square")
+                }
+
+            AnalysisChatView()
+                .tabItem {
+                    Label("Analysis & Advice", systemImage: "message.badge")
+                }
+        }
+        .environmentObject(healthViewModel)
+    }
 }
