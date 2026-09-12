@@ -114,7 +114,10 @@ actor UnslothClient {
         request: URLRequest,
         yield: @escaping @Sendable (AIStreamingEvent) -> Void
     ) async throws {
-        let (bytes, response) = try await session.bytes(for: request)
+        let (bytes, response) = try await session.bytes(
+            for: request,
+            delegate: AISameOriginRedirectDelegate.shared
+        )
         guard let http = response as? HTTPURLResponse else {
             throw UnslothError.invalidResponse
         }

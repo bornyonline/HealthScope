@@ -1,4 +1,5 @@
 import Foundation
+import Network
 
 nonisolated enum ChatRole: String, Codable, Sendable {
     case user
@@ -88,12 +89,16 @@ nonisolated struct ChatAISettings: Sendable {
               components.password == nil,
               components.query == nil,
               components.fragment == nil,
+              components.port.map({ (1...65_535).contains($0) }) ?? true,
               components.path.isEmpty || components.path == "/" else {
             throw AIConfigurationError.invalidBaseURL(providerName)
         }
 
         components.scheme = scheme
         components.path = ""
+        if scheme == "http", !AIEndpointPolicy.isLocalHost(host) {
+            throw AIConfigurationError.insecureHTTP(providerName)
+        }
         guard let url = components.url else {
             throw AIConfigurationError.invalidBaseURL(providerName)
         }
@@ -134,6 +139,77 @@ nonisolated struct ChatAISettings: Sendable {
     }
 }
 
+nonisolated enum AIEndpointPolicy {
+    static func isLocalHost(_ host: String) -> Bool {
+        var normalized = host
+            .lowercased()
+            .trimmingCharacters(in: CharacterSet(charactersIn: "[]"))
+        if normalized.hasSuffix(".") {
+            normalized.removeLast()
+        }
+        if normalized == "localhost" || normalized.hasSuffix(".localhost") || normalized.hasSuffix(".local") {
+            return true
+        }
+
+        if let address = IPv4Address(normalized) {
+            let octets = [UInt8](address.rawValue)
+            return octets[0] == 10
+                || octets[0] == 127
+                || (octets[0] == 169 && octets[1] == 254)
+                || (octets[0] == 172 && (16...31).contains(octets[1]))
+                || (octets[0] == 192 && octets[1] == 168)
+        }
+
+        let ipv6 = normalized.split(separator: "%", maxSplits: 1).first.map(String.init) ?? normalized
+        guard let address = IPv6Address(ipv6) else { return false }
+        let bytes = [UInt8](address.rawValue)
+        let isLoopback = bytes.dropLast().allSatisfy { $0 == 0 } && bytes.last == 1
+        let isUniqueLocal = bytes[0] & 0xfe == 0xfc
+        let isLinkLocal = bytes[0] == 0xfe && bytes[1] & 0xc0 == 0x80
+        return isLoopback || isUniqueLocal || isLinkLocal
+    }
+
+    static func allowsRedirect(from originalURL: URL?, to redirectedURL: URL?) -> Bool {
+        guard let originalURL,
+              let redirectedURL,
+              let original = origin(of: originalURL),
+              let redirected = origin(of: redirectedURL) else {
+            return false
+        }
+        return original == redirected
+    }
+
+    private static func origin(of url: URL) -> String? {
+        guard let components = URLComponents(url: url, resolvingAgainstBaseURL: false),
+              let scheme = components.scheme?.lowercased(),
+              let host = components.host?.lowercased() else {
+            return nil
+        }
+        let port = components.port ?? (scheme == "https" ? 443 : 80)
+        return "\(scheme)://\(host):\(port)"
+    }
+}
+
+nonisolated final class AISameOriginRedirectDelegate: NSObject, URLSessionTaskDelegate, @unchecked Sendable {
+    static let shared = AISameOriginRedirectDelegate()
+
+    private override init() {}
+
+    func urlSession(
+        _ session: URLSession,
+        task: URLSessionTask,
+        willPerformHTTPRedirection response: HTTPURLResponse,
+        newRequest request: URLRequest,
+        completionHandler: @escaping (URLRequest?) -> Void
+    ) {
+        let permitted = AIEndpointPolicy.allowsRedirect(
+            from: task.originalRequest?.url,
+            to: request.url
+        )
+        completionHandler(permitted ? request : nil)
+    }
+}
+
 nonisolated enum AIStreamingEvent: Sendable {
     case textDelta(String)
     case completed
@@ -146,6 +222,7 @@ nonisolated enum AIConfigurationError: LocalizedError {
     case invalidModel
     case invalidTimeout
     case invalidAPIKey
+    case insecureHTTP(String)
     case incompleteStream(String)
 
     var errorDescription: String? {
@@ -158,6 +235,8 @@ nonisolated enum AIConfigurationError: LocalizedError {
             return "Timeout must be between 5 and 600 seconds."
         case .invalidAPIKey:
             return "The API key must be at most 4,096 characters and cannot contain line breaks."
+        case .insecureHTTP(let provider):
+            return "Plaintext HTTP for \(provider) is limited to loopback, private-network, link-local, and .local hosts. Use HTTPS for other endpoints."
         case .incompleteStream(let provider):
             return "\(provider) disconnected before confirming that the response was complete."
         }

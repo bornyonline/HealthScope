@@ -11,16 +11,18 @@ final class ConversationStore {
     private static let currentVersion = 2
 
     private let fileURL: URL
+    private let fileManager: FileManager
     private let decoder: JSONDecoder
     private let encoder: JSONEncoder
     private let ioQueue = DispatchQueue(label: "ConversationStore.IO", qos: .utility)
 
     private(set) var loadError: Error?
 
-    init(fileManager: FileManager = .default) {
+    init(fileManager: FileManager = .default, fileURL: URL? = nil) {
         let baseDirectory = fileManager.urls(for: .documentDirectory, in: .userDomainMask).first
             ?? URL(fileURLWithPath: NSTemporaryDirectory())
-        fileURL = baseDirectory.appendingPathComponent("analysis_chat_history.json")
+        self.fileURL = fileURL ?? baseDirectory.appendingPathComponent("analysis_chat_history.json")
+        self.fileManager = fileManager
 
         let decoder = JSONDecoder()
         decoder.dateDecodingStrategy = .iso8601
@@ -85,6 +87,15 @@ final class ConversationStore {
             } catch {
                 completion(error)
             }
+        }
+    }
+
+    func delete() throws {
+        try ioQueue.sync {
+            if fileManager.fileExists(atPath: fileURL.path) {
+                try fileManager.removeItem(at: fileURL)
+            }
+            try VersionedPersistence.removeBackup(for: fileURL, fileManager: fileManager)
         }
     }
 

@@ -114,7 +114,10 @@ actor OllamaClient {
         request: URLRequest,
         yield: @escaping @Sendable (AIStreamingEvent) -> Void
     ) async throws {
-        let (bytes, response) = try await session.bytes(for: request)
+        let (bytes, response) = try await session.bytes(
+            for: request,
+            delegate: AISameOriginRedirectDelegate.shared
+        )
         guard let http = response as? HTTPURLResponse else {
             throw OllamaError.invalidResponse
         }
@@ -162,7 +165,10 @@ actor OllamaClient {
         request: URLRequest,
         yield: @escaping @Sendable (AIStreamingEvent) -> Void
     ) async throws {
-        let (fileURL, response) = try await session.download(for: request)
+        let (fileURL, response) = try await session.download(
+            for: request,
+            delegate: AISameOriginRedirectDelegate.shared
+        )
         let fileSize = try fileURL.resourceValues(forKeys: [.fileSizeKey]).fileSize ?? 0
         guard fileSize <= maximumSingleResponseBytes else {
             throw OllamaError.responseTooLarge

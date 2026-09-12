@@ -26,7 +26,7 @@ struct AnalysisChatView: View {
     @AppStorage("ai_provider") private var providerRaw = AIProviderOption.ollamaLocal.rawValue
     @AppStorage("ollama_base_url") private var ollamaBaseURL = "http://127.0.0.1:11434"
     @AppStorage("ollama_model") private var ollamaModel = "llama3.1:8b"
-    @AppStorage("unsloth_base_url") private var unslothBaseURL = "http://127.0.0.1:8888"
+    @AppStorage("unsloth_base_url") private var unslothBaseURL = ""
     @AppStorage("unsloth_model") private var unslothModel = ""
     @AppStorage("ollama_stream") private var streamResponses = true
     @AppStorage("analysis_device_safe_mode") private var deviceSafeMode = true

@@ -406,10 +406,15 @@ final class AnalysisChatViewModel: ObservableObject {
     @discardableResult
     func clearConversation() -> Bool {
         guard !isSending else { return false }
-        messages.removeAll()
-        errorMessage = nil
-        saveMessages()
-        return true
+        do {
+            try store.delete()
+            messages.removeAll()
+            errorMessage = nil
+            return true
+        } catch {
+            errorMessage = localizedDescription(for: error)
+            return false
+        }
     }
 
     func warmUpIfNeeded(settings: ChatAISettings) async {

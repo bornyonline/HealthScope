@@ -147,3 +147,110 @@ final class AIHealthContextBuilderTests: XCTestCase {
         try XCTUnwrap(object[key] as? [[String: Any]])
     }
 }
+
+final class ChatAISettingsSecurityTests: XCTestCase {
+    func testPlaintextHTTPAcceptsOnlyLocalHosts() {
+        let acceptedHosts = [
+            "http://127.0.0.1:11434",
+            "http://10.0.0.1:11434",
+            "http://172.31.255.255:11434",
+            "http://192.168.1.10:11434",
+            "http://169.254.1.1:11434",
+            "http://healthscope.local:11434",
+            "http://healthscope.local.:11434",
+            "http://[::1]:11434",
+            "http://[0:0:0:0:0:0:0:1]:11434",
+            "http://[fd00::1]:11434",
+            "http://[fe80::1]:11434"
+        ]
+
+        for baseURL in acceptedHosts {
+            XCTAssertNoThrow(
+                try settings(baseURL: baseURL).validatedBaseURL(for: .ollamaLocal),
+                "Expected local endpoint to be accepted: \(baseURL)"
+            )
+        }
+    }
+
+    func testPlaintextHTTPRejectsPublicHosts() {
+        let rejectedHosts = [
+            "http://192.0.2.10:8888",
+            "http://172.32.0.1:8888",
+            "http://example.com:8888",
+            "http://[fc00:nothex]:8888"
+        ]
+
+        for baseURL in rejectedHosts {
+            XCTAssertThrowsError(try settings(baseURL: baseURL).validatedBaseURL(for: .ollamaLocal)) { error in
+                guard case AIConfigurationError.insecureHTTP = error else {
+                    return XCTFail("Expected insecureHTTP for \(baseURL), got \(error)")
+                }
+            }
+        }
+    }
+
+    func testHTTPSAcceptsPublicHosts() {
+        XCTAssertNoThrow(
+            try settings(baseURL: "https://example.com").validatedBaseURL(for: .ollamaLocal)
+        )
+    }
+
+    func testRejectsOutOfRangePort() {
+        XCTAssertThrowsError(
+            try settings(baseURL: "https://example.com:65536").validatedBaseURL(for: .ollamaLocal)
+        )
+    }
+
+    func testRedirectsMustRemainOnTheConfiguredOrigin() throws {
+        let original = try XCTUnwrap(URL(string: "http://192.168.1.10:11434/api/chat"))
+        XCTAssertTrue(AIEndpointPolicy.allowsRedirect(
+            from: original,
+            to: URL(string: "http://192.168.1.10:11434/v1/chat")
+        ))
+        XCTAssertFalse(AIEndpointPolicy.allowsRedirect(
+            from: original,
+            to: URL(string: "http://192.0.2.10:11434/v1/chat")
+        ))
+        XCTAssertFalse(AIEndpointPolicy.allowsRedirect(
+            from: original,
+            to: URL(string: "https://example.com/v1/chat")
+        ))
+    }
+
+    private func settings(baseURL: String) -> ChatAISettings {
+        ChatAISettings(
+            provider: .ollamaLocal,
+            ollamaBaseURLString: baseURL,
+            ollamaModel: "test-model",
+            unslothBaseURLString: "https://example.com",
+            unslothModel: "test-model",
+            unslothAPIKey: "",
+            streamResponses: true,
+            deviceSafeMode: true,
+            timeoutSeconds: 30
+        )
+    }
+}
+
+final class ConversationStorePrivacyTests: XCTestCase {
+    func testDeleteRemovesConversationAndBackup() throws {
+        let directory = FileManager.default.temporaryDirectory
+            .appendingPathComponent(UUID().uuidString, isDirectory: true)
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: directory) }
+
+        let fileURL = directory.appendingPathComponent("analysis_chat_history.json")
+        let backupURL = fileURL.appendingPathExtension("backup")
+        let store = ConversationStore(fileURL: fileURL)
+        try store.save([ChatMessage(role: .user, content: "Sensitive health question")])
+        try store.save([ChatMessage(role: .assistant, content: "Sensitive health answer")])
+
+        XCTAssertTrue(FileManager.default.fileExists(atPath: fileURL.path))
+        XCTAssertTrue(FileManager.default.fileExists(atPath: backupURL.path))
+
+        try store.delete()
+
+        XCTAssertFalse(FileManager.default.fileExists(atPath: fileURL.path))
+        XCTAssertFalse(FileManager.default.fileExists(atPath: backupURL.path))
+    }
+}
