@@ -21,7 +21,7 @@ HealthScope includes an AI-powered **Analysis & Advice** tab that can connect di
    - **Ollama Base URL** (default: `http://127.0.0.1:11434`)
    - **Model** (default: `llama3.1:8b`)
    - **Stream responses** on/off
-4. Send a message. The app includes a short health metrics summary with your prompt context.
+4. Send a message. With your consent, the app includes dated daily metrics and a bounded list of workout sessions for the selected 7-, 30-, or 90-day range.
 
 ### Notes
 - Conversation history is stored locally on-device and persists across launches.
