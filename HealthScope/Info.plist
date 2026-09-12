@@ -1,0 +1,17 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+	<key>NSAppTransportSecurity</key>
+	<dict>
+		<key>NSAllowsLocalNetworking</key>
+		<true/>
+	</dict>
+	<key>NSHealthShareUsageDescription</key>
+	<string>HealthScope reads your health data to display trends, prefill your profile, and, only when enabled, send a summary to your configured AI service.</string>
+	<key>NSHealthClinicalHealthRecordsShareUsageDescription</key>
+	<string>HealthScope reads selected clinical records to create an optional summary for your configured AI service. Clinical data is included only when the setting is enabled and you confirm sending.</string>
+	<key>NSLocalNetworkUsageDescription</key>
+	<string>HealthScope connects to your local Ollama or Unsloth server for AI analysis and advice.</string>
+</dict>
+</plist>

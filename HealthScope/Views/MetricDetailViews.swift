@@ -6,11 +6,21 @@ struct BloodPressureDetailView: View {
 
     @State private var showEntryForm = false
     @State private var showImporter = false
+    @State private var selectedDate: Date?
+
+    private var period: String {
+        "Last \(viewModel.selectedRange.rawValue) days"
+    }
 
     var body: some View {
         List {
             Section {
-                BloodPressureCard(points: viewModel.bloodPressure)
+                BloodPressureCard(
+                    points: viewModel.bloodPressure,
+                    period: period,
+                    chartHeight: 320,
+                    selection: $selectedDate
+                )
                     .listRowInsets(EdgeInsets())
                     .listRowBackground(Color.clear)
             }
@@ -49,13 +59,15 @@ struct BloodPressureDetailView: View {
         .fileImporter(isPresented: $showImporter, allowedContentTypes: [.commaSeparatedText, .plainText]) { result in
             switch result {
             case .success(let url):
-                do {
-                    let imported = try viewModel.importCSV(for: .bloodPressure, from: url)
-                    if imported == 0 {
-                        viewModel.errorMessage = "No valid blood pressure rows were imported."
+                Task {
+                    do {
+                        let imported = try await viewModel.importCSV(for: .bloodPressure, from: url)
+                        if imported == 0 {
+                            viewModel.errorMessage = "No valid blood pressure rows were imported."
+                        }
+                    } catch {
+                        viewModel.errorMessage = error.localizedDescription
                     }
-                } catch {
-                    viewModel.errorMessage = error.localizedDescription
                 }
             case .failure(let error):
                 viewModel.errorMessage = error.localizedDescription
@@ -66,13 +78,13 @@ struct BloodPressureDetailView: View {
 
 struct TimeMetricDetailView: View {
     let metric: MetricType
-    let unitLabel: String
-    let color: Color
 
     @EnvironmentObject private var viewModel: HealthDashboardViewModel
+    @EnvironmentObject private var preferences: AppPreferences
 
     @State private var showEntryForm = false
     @State private var showImporter = false
+    @State private var selectedDate: Date?
 
     private var points: [TimeValuePoint] {
         viewModel.timeValuePoints(for: metric)
@@ -82,14 +94,19 @@ struct TimeMetricDetailView: View {
         viewModel.manualTimeValuePoints(for: metric)
     }
 
+    private var period: String {
+        "Last \(viewModel.selectedRange.rawValue) days"
+    }
+
     var body: some View {
         List {
             Section {
-                LineMetricCard(
-                    title: metric.title,
-                    unitLabel: unitLabel,
+                TimeMetricCard(
+                    metric: metric,
                     points: points,
-                    color: color
+                    period: period,
+                    chartHeight: 320,
+                    selection: $selectedDate
                 )
                 .listRowInsets(EdgeInsets())
                 .listRowBackground(Color.clear)
@@ -104,7 +121,7 @@ struct TimeMetricDetailView: View {
                         HStack {
                             Text(point.date, style: .date)
                             Spacer()
-                            Text("\(point.value.formatted(.number.precision(.fractionLength(1)))) \(unitLabel)")
+                            Text(manualValueText(point.value))
                         }
                     }
                 }
@@ -122,25 +139,40 @@ struct TimeMetricDetailView: View {
             }
         }
         .sheet(isPresented: $showEntryForm) {
-            TimeValueEntryForm(title: metric.title, unitLabel: unitLabel) { date, value in
-                viewModel.addManualTimeValue(metric: metric, date: date, value: value)
+            TimeValueEntryForm(
+                title: metric.title,
+                unitLabel: metric.entryUnit(for: preferences.measurementSystem)
+            ) { date, value in
+                let canonicalValue = metric == .bloodGlucose
+                    ? preferences.measurementSystem.canonicalGlucose(fromDisplayValue: value)
+                    : value
+                return viewModel.addManualTimeValue(metric: metric, date: date, value: canonicalValue)
             }
         }
         .fileImporter(isPresented: $showImporter, allowedContentTypes: [.commaSeparatedText, .plainText]) { result in
             switch result {
             case .success(let url):
-                do {
-                    let imported = try viewModel.importCSV(for: metric, from: url)
-                    if imported == 0 {
-                        viewModel.errorMessage = "No valid rows were imported for \(metric.title)."
+                Task {
+                    do {
+                        let imported = try await viewModel.importCSV(for: metric, from: url)
+                        if imported == 0 {
+                            viewModel.errorMessage = "No valid rows were imported for \(metric.title)."
+                        }
+                    } catch {
+                        viewModel.errorMessage = error.localizedDescription
                     }
-                } catch {
-                    viewModel.errorMessage = error.localizedDescription
                 }
             case .failure(let error):
                 viewModel.errorMessage = error.localizedDescription
             }
         }
+    }
+
+    private func manualValueText(_ canonicalValue: Double) -> String {
+        if metric == .bloodGlucose {
+            return metric.formatted(canonicalValue, measurementSystem: preferences.measurementSystem)
+        }
+        return "\(canonicalValue.formatted(.number.precision(.fractionLength(1)))) \(metric.entryUnit(for: preferences.measurementSystem))"
     }
 }
 
@@ -150,10 +182,14 @@ struct ActivityDetailView: View {
     @State private var showEntryForm = false
     @State private var showImporter = false
 
+    private var period: String {
+        "Last \(viewModel.selectedRange.rawValue) days"
+    }
+
     var body: some View {
         List {
             Section {
-                ActivityCard(points: viewModel.activities)
+                ActivityCard(points: viewModel.activities, period: period, chartHeight: 320)
                     .listRowInsets(EdgeInsets())
                     .listRowBackground(Color.clear)
             }
@@ -197,13 +233,15 @@ struct ActivityDetailView: View {
         .fileImporter(isPresented: $showImporter, allowedContentTypes: [.commaSeparatedText, .plainText]) { result in
             switch result {
             case .success(let url):
-                do {
-                    let imported = try viewModel.importCSV(for: .activities, from: url)
-                    if imported == 0 {
-                        viewModel.errorMessage = "No valid activity rows were imported."
+                Task {
+                    do {
+                        let imported = try await viewModel.importCSV(for: .activities, from: url)
+                        if imported == 0 {
+                            viewModel.errorMessage = "No valid activity rows were imported."
+                        }
+                    } catch {
+                        viewModel.errorMessage = error.localizedDescription
                     }
-                } catch {
-                    viewModel.errorMessage = error.localizedDescription
                 }
             case .failure(let error):
                 viewModel.errorMessage = error.localizedDescription
@@ -219,7 +257,7 @@ private struct BloodPressureEntryForm: View {
     @State private var systolic = ""
     @State private var diastolic = ""
 
-    let onSave: (Date, Double, Double) -> Void
+    let onSave: (Date, Double, Double) -> Bool
 
     var body: some View {
         NavigationStack {
@@ -237,11 +275,13 @@ private struct BloodPressureEntryForm: View {
                 }
                 ToolbarItem(placement: .confirmationAction) {
                     Button("Save") {
-                        guard let s = Double(systolic), let d = Double(diastolic) else { return }
-                        onSave(date, s, d)
-                        dismiss()
+                        guard let s = parseLocalizedDecimal(systolic),
+                              let d = parseLocalizedDecimal(diastolic) else { return }
+                        if onSave(date, s, d) {
+                            dismiss()
+                        }
                     }
-                    .disabled(Double(systolic) == nil || Double(diastolic) == nil)
+                    .disabled(parseLocalizedDecimal(systolic) == nil || parseLocalizedDecimal(diastolic) == nil)
                 }
             }
         }
@@ -253,7 +293,7 @@ private struct TimeValueEntryForm: View {
 
     let title: String
     let unitLabel: String
-    let onSave: (Date, Double) -> Void
+    let onSave: (Date, Double) -> Bool
 
     @State private var date = Date()
     @State private var value = ""
@@ -272,11 +312,12 @@ private struct TimeValueEntryForm: View {
                 }
                 ToolbarItem(placement: .confirmationAction) {
                     Button("Save") {
-                        guard let parsed = Double(value) else { return }
-                        onSave(date, parsed)
-                        dismiss()
+                        guard let parsed = parseLocalizedDecimal(value) else { return }
+                        if onSave(date, parsed) {
+                            dismiss()
+                        }
                     }
-                    .disabled(Double(value) == nil)
+                    .disabled(parseLocalizedDecimal(value) == nil)
                 }
             }
         }
@@ -290,7 +331,7 @@ private struct ActivityEntryForm: View {
     @State private var name = ""
     @State private var minutes = ""
 
-    let onSave: (Date, String, Double) -> Void
+    let onSave: (Date, String, Double) -> Bool
 
     var body: some View {
         NavigationStack {
@@ -308,11 +349,12 @@ private struct ActivityEntryForm: View {
                 ToolbarItem(placement: .confirmationAction) {
                     Button("Save") {
                         guard !name.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty,
-                              let parsedMinutes = Double(minutes) else { return }
-                        onSave(date, name.trimmingCharacters(in: .whitespacesAndNewlines), parsedMinutes)
-                        dismiss()
+                              let parsedMinutes = parseLocalizedDecimal(minutes) else { return }
+                        if onSave(date, name.trimmingCharacters(in: .whitespacesAndNewlines), parsedMinutes) {
+                            dismiss()
+                        }
                     }
-                    .disabled(name.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || Double(minutes) == nil)
+                    .disabled(name.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || parseLocalizedDecimal(minutes) == nil)
                 }
             }
         }
